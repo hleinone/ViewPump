@@ -8,5 +8,5 @@ import android.view.View;
 
 public interface FallbackViewCreator {
     @Nullable
-    View onCreateView(@Nullable View parent, @NonNull String name, @NonNull Context context, @Nullable AttributeSet attrs);
+    View onCreateView(@Nullable View parent, @NonNull String name, @NonNull Context context, @Nullable AttributeSet attrs) throws ClassNotFoundException;
 }

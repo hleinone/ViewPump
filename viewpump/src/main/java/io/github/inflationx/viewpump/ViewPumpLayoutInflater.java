@@ -1,6 +1,7 @@
 package io.github.inflationx.viewpump;
 
 import android.content.Context;
+import android.os.Build;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -12,6 +13,8 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 class ViewPumpLayoutInflater extends LayoutInflater implements ViewPumpActivityFactory {
+
+    private static final Boolean IS_AT_LEAST_Q = Build.VERSION.SDK_INT > Build.VERSION_CODES.P || ViewPumpLayoutInflater.isAtLeastQ();
 
     private static final String[] sClassPrefixList = {
             "android.widget.",
@@ -178,7 +181,7 @@ class ViewPumpLayoutInflater extends LayoutInflater implements ViewPumpActivityF
      * @param attrs       Attr for this view which we can steal fontPath from too.
      * @return view or the View we inflate in here.
      */
-    private View createCustomViewInternal(View parent, View view, String name, Context viewContext, AttributeSet attrs) {
+    private View createCustomViewInternal(View parent, View view, String name, Context viewContext, AttributeSet attrs) throws ClassNotFoundException {
         // I by no means advise anyone to do this normally, but Google have locked down access to
         // the createView() method, so we never get a callback with attributes at the end of the
         // createViewFromTag chain (which would solve all this unnecessary rubbish).
@@ -190,22 +193,26 @@ class ViewPumpLayoutInflater extends LayoutInflater implements ViewPumpActivityF
         // If CustomViewCreation is off skip this.
         if (!ViewPump.get().isCustomViewCreation()) return view;
         if (view == null && name.indexOf('.') > -1) {
-            if (mConstructorArgs == null)
-                mConstructorArgs = ReflectionUtils.getField(LayoutInflater.class, "mConstructorArgs");
+            if (IS_AT_LEAST_Q) {
+                view = cloneInContext(viewContext).createView(name, null, attrs);
+            } else {
+                if (mConstructorArgs == null)
+                    mConstructorArgs = ReflectionUtils.getField(LayoutInflater.class, "mConstructorArgs");
 
-            final Object[] mConstructorArgsArr = (Object[]) ReflectionUtils.getValue(mConstructorArgs, this);
-            final Object lastContext = mConstructorArgsArr[0];
-            // The LayoutInflater actually finds out the correct context to use. We just need to set
-            // it on the mConstructor for the internal method.
-            // Set the constructor ars up for the createView, not sure why we can't pass these in.
-            mConstructorArgsArr[0] = viewContext;
-            ReflectionUtils.setValue(mConstructorArgs, this, mConstructorArgsArr);
-            try {
-                view = createView(name, null, attrs);
-            } catch (ClassNotFoundException ignored) {
-            } finally {
-                mConstructorArgsArr[0] = lastContext;
+                final Object[] mConstructorArgsArr = (Object[]) ReflectionUtils.getValue(mConstructorArgs, this);
+                final Object lastContext = mConstructorArgsArr[0];
+                // The LayoutInflater actually finds out the correct context to use. We just need to set
+                // it on the mConstructor for the internal method.
+                // Set the constructor ars up for the createView, not sure why we can't pass these in.
+                mConstructorArgsArr[0] = viewContext;
                 ReflectionUtils.setValue(mConstructorArgs, this, mConstructorArgsArr);
+                try {
+                    view = createView(name, null, attrs);
+                } catch (ClassNotFoundException ignored) {
+                } finally {
+                    mConstructorArgsArr[0] = lastContext;
+                    ReflectionUtils.setValue(mConstructorArgs, this, mConstructorArgsArr);
+                }
             }
         }
         return view;
@@ -241,7 +248,7 @@ class ViewPumpLayoutInflater extends LayoutInflater implements ViewPumpActivityF
         }
 
         @Override
-        public View onCreateView(View parent, String name, Context context, AttributeSet attrs) {
+        public View onCreateView(View parent, String name, Context context, AttributeSet attrs) throws ClassNotFoundException {
             return inflater.createCustomViewInternal(parent, view, name, context, attrs);
         }
     }
@@ -363,7 +370,7 @@ class ViewPumpLayoutInflater extends LayoutInflater implements ViewPumpActivityF
         }
 
         @Override
-        public View onCreateView(View parent, String name, Context context, AttributeSet attrs) {
+        public View onCreateView(View parent, String name, Context context, AttributeSet attrs) throws ClassNotFoundException {
             return mFactory2.onCreateView(parent, name, context, attrs);
         }
     }
@@ -401,10 +408,15 @@ class ViewPumpLayoutInflater extends LayoutInflater implements ViewPumpActivityF
         }
 
         @Override
-        public View onCreateView(View parent, String name, Context context, AttributeSet attrs) {
+        public View onCreateView(View parent, String name, Context context, AttributeSet attrs) throws ClassNotFoundException {
             return mInflater.createCustomViewInternal(parent,
                     mFactory2.onCreateView(parent, name, context, attrs), name, context, attrs);
         }
     }
 
+    private static boolean isAtLeastQ() {
+        return Build.VERSION.CODENAME.length() == 1
+                && Build.VERSION.CODENAME.charAt(0) >= 'Q'
+                && Build.VERSION.CODENAME.charAt(0) <= 'Z';
+    }
 }
